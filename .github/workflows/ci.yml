@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect Go module
+        id: gocheck
+        run: |
+          if [ -f go.mod ]; then
+            echo "has_go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_go=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Go
+        if: steps.gocheck.outputs.has_go == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        if: steps.gocheck.outputs.has_go == 'true'
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        if: steps.gocheck.outputs.has_go == 'true'
+        run: go vet ./...
+
+      - name: staticcheck
+        if: steps.gocheck.outputs.has_go == 'true'
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: latest
+          install-go: false
+
+      - name: govulncheck
+        if: steps.gocheck.outputs.has_go == 'true'
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Test with race detector
+        if: steps.gocheck.outputs.has_go == 'true'
+        run: go test ./... -race -count=1 -coverprofile=coverage.out
+
+      - name: Pre-MVP placeholder
+        if: steps.gocheck.outputs.has_go == 'false'
+        run: echo "No go.mod yet; CI scaffold in place, will run on first Go commit."

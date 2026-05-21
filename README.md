@@ -1,5 +1,11 @@
 # LLM Gateway
 
+[![CI](https://github.com/slahiri/llm-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/slahiri/llm-gateway/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.23%2B-00ADD8?logo=go)](https://go.dev/)
+[![Postgres](https://img.shields.io/badge/postgres-15%2B-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Status](https://img.shields.io/badge/status-pre--MVP-orange)](docs/features.md)
+
 A Go-based LLM gateway platform built for regulated industries.
 Proxy, governance, multi-tenant accounts, metered billing, and an
 admin frontend — in a single binary.
