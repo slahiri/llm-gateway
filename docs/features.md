@@ -21,11 +21,17 @@ The differentiation wedge is **compliance-first for regulated industries**
 below; that doc is the source of truth for Tier 0.
 
 - **Wire-protocol endpoints in parallel** — native surfaces, not one
-  canonical shape. Tier 0 ships `/v1/chat/completions` (OpenAI Chat
-  Completions), `/v1/messages` (Anthropic Messages), and
-  `/v1/embeddings` (OpenAI Embeddings). `/v1/responses` (used by
-  Codex CLI) is a Tier 0 stretch, firm Tier 1. Gemini, Ollama, and
-  image endpoints land in Tier 1+.
+  canonical shape. Tier 0 ships four required endpoints:
+  `/v1/chat/completions` (OpenAI Chat Completions),
+  `/v1/responses` (OpenAI Responses — for Codex CLI and the OpenAI
+  Agents SDK), `/v1/messages` (Anthropic Messages), and
+  `/v1/embeddings` (OpenAI Embeddings). Gemini, Ollama, and image
+  endpoints land in Tier 1+.
+- **Agent-tool and IDE compatibility is a Tier 0 acceptance
+  criterion** — Codex CLI, Claude Code, Aider, Cursor, Continue,
+  Cline, Windsurf, OpenWebUI, LibreChat, and the OpenAI / Anthropic
+  SDKs all work against the gateway with only a `BASE_URL` change.
+  Full setup matrix in [`features-tier-0.md`](features-tier-0.md).
 - **Provider drivers, dual-mode** — one driver per upstream provider;
   each driver implements every wire-protocol method. Native shape
   matches → passthrough fast path; shape differs → in-driver

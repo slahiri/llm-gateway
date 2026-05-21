@@ -7,10 +7,17 @@ roadmap: [`features.md`](features.md).
 
 A working multi-provider proxy that any OpenAI- or Anthropic-
 compatible client (Codex CLI, Claude Code, Aider, Cursor, Continue,
-Cline, Windsurf, OpenWebUI, LibreChat, Anthropic SDK consumers) can
-be pointed at and use immediately. Native wire-protocol endpoints,
-faithful tool-call and streaming translation across provider shapes,
-normalized errors, and a model registry with capability tags.
+Cline, Windsurf, OpenWebUI, LibreChat, the OpenAI Agents SDK,
+Anthropic SDK consumers) can be pointed at and use immediately.
+Native wire-protocol endpoints, faithful tool-call and streaming
+translation across provider shapes, normalized errors, and a model
+registry with capability tags.
+
+**Agent-tool and IDE compatibility is a Tier 0 success criterion**,
+not a downstream nice-to-have. The endpoints below are chosen
+specifically so that Codex CLI, Claude Code, and every major
+OpenAI- or Anthropic-compatible IDE plugin work against the gateway
+with only a `BASE_URL` change.
 
 Tier 0 does **not** include caching, virtual keys, budgets, smart
 routing, governance / PII, observability beyond per-request log
@@ -24,9 +31,10 @@ Tier 0 is complete when all of the following are true:
   direct**, **Anthropic direct**, **AWS Bedrock** (Anthropic models
   on AWS). Bedrock is in the MVP set because it is the deployment
   shape regulated buyers prefer.
-- Three wire-protocol endpoints live and behaviorally correct:
-  `/v1/chat/completions`, `/v1/messages`, `/v1/embeddings`.
-  `/v1/responses` is a stretch goal; firm Tier 1 deliverable.
+- Four wire-protocol endpoints live and behaviorally correct:
+  `/v1/chat/completions`, `/v1/responses`, `/v1/messages`,
+  `/v1/embeddings`. `/v1/responses` is required for Codex CLI and
+  OpenAI Agents SDK compatibility.
 - Streaming works end-to-end on all three including the cross-
   protocol pairs (OpenAI client + Claude backend, Anthropic client
   + GPT backend).
@@ -57,10 +65,10 @@ their existing `BASE_URL` at the gateway and otherwise don't change.
 
 | Endpoint | Native shape | Tier 0 status | Target tools |
 |---|---|---|---|
-| `POST /v1/chat/completions` | OpenAI Chat Completions | Required | Aider, Cline, Cursor, Continue, Windsurf, LibreChat, OpenWebUI |
-| `POST /v1/messages` | Anthropic Messages | Required | Claude Code, Anthropic SDK |
-| `POST /v1/embeddings` | OpenAI Embeddings | Required | Most retrieval pipelines |
-| `POST /v1/responses` | OpenAI Responses | Stretch | Codex CLI, OpenAI Agents SDK |
+| `POST /v1/chat/completions` | OpenAI Chat Completions | **Required** | Aider, Cline, Cursor, Continue, Windsurf, LibreChat, OpenWebUI, OpenAI SDK |
+| `POST /v1/responses` | OpenAI Responses | **Required** | Codex CLI, OpenAI Agents SDK |
+| `POST /v1/messages` | Anthropic Messages | **Required** | Claude Code, Anthropic SDK |
+| `POST /v1/embeddings` | OpenAI Embeddings | **Required** | Retrieval pipelines |
 | `POST /v1/images/generations` | OpenAI Images | Deferred to Tier 1+ | Image-gen clients |
 | `POST /v1beta/models/*` | Google Gemini | Deferred | Vertex / Gemini SDK |
 | `POST /api/chat` | Ollama | Deferred | Continue (Ollama mode), local-first tools |
@@ -102,16 +110,43 @@ their existing `BASE_URL` at the gateway and otherwise don't change.
 - Cross-provider embedding models (Voyage, Cohere, Bedrock
   embeddings) translate response into OpenAI shape.
 
-### `/v1/responses` (stretch)
+### `/v1/responses` (OpenAI Responses API)
 
-- Faithful to OpenAI's Responses API.
-- Critical for Codex CLI and the OpenAI Agents SDK.
-- Different shape from Chat Completions — uses `input` instead of
-  `messages`, returns `output[]` with typed items, has its own
-  streaming events.
-- Held as stretch for Tier 0 because the shape is larger and
-  Codex specifically can also be configured against
-  `/v1/chat/completions` as a fallback.
+Required for Codex CLI and OpenAI Agents SDK compatibility. Larger
+shape than Chat Completions but the surface Tier 0 must support is
+well-bounded.
+
+- Supported request fields: `model`, `input` (string or array of
+  typed items: `message`, `function_call_output`, `image`, etc.),
+  `instructions`, `tools`, `tool_choice`, `parallel_tool_calls`,
+  `temperature`, `top_p`, `max_output_tokens`, `stop`,
+  `response_format`, `stream`, and `previous_response_id` (with
+  caveats below).
+- Streaming: typed event stream — `response.created`,
+  `response.output_item.added`, `response.content_part.added`,
+  `response.output_text.delta`,
+  `response.function_call_arguments.delta`,
+  `response.output_item.done`, `response.completed`,
+  `response.error`.
+- **Server-side conversation state** (`previous_response_id`):
+  supported only on OpenAI native passthrough, where the gateway
+  forwards the ID and lets OpenAI maintain state. Cross-provider
+  routes (e.g., Responses-shape request routed to Claude) reject
+  any non-null `previous_response_id` with
+  `unsupported_capability: server_side_state`. The gateway does
+  not synthesize conversation state for providers that lack it
+  natively — that's a Tier 6+ design decision.
+- **OpenAI built-in tools** (`web_search`, `file_search`,
+  `code_interpreter`, `computer_use`): supported only on OpenAI
+  native passthrough; cross-provider routes reject with
+  `unsupported_capability: built_in_tool_<name>`.
+- **User-defined function tools**: cross-provider supported.
+  Translated the same way as Chat Completions tool calls (`tool_use`
+  blocks for Anthropic, `function_call` items for OpenAI Responses).
+- Cross-protocol translation:
+  `openai_responses ↔ anthropic_messages` translator handles
+  `input` → `messages`, function tools, and the streaming event
+  remap. The translator is a Tier 0 deliverable.
 
 ### Deferred endpoints
 
@@ -199,15 +234,18 @@ truly fast. Native passthrough touches translation code zero times.
 
 Translation pairs to implement in Tier 0:
 - `openai_chat ↔ anthropic_messages` (request and response,
-  including streaming)
-- `openai_embeddings → cohere_embeddings` (request and response;
-  one-shot, no streaming)
+  including streaming and tool calls)
+- `openai_responses ↔ anthropic_messages` (request and response,
+  including streaming and tool calls; required for Codex against
+  Claude models)
 - `openai_embeddings → bedrock_embeddings` (request and response;
-  one-shot)
+  one-shot, no streaming)
 
 Translation pairs deferred to Tier 1:
 - Anything involving Gemini, Vertex, Azure, Ollama wire formats.
-- `openai_responses ↔ anthropic_messages`.
+- `openai_chat ↔ openai_responses` (cross-OpenAI-format
+  translation; both are native to OpenAI so passthrough handles
+  the common case).
 
 ## Tool / function-calling normalization
 
@@ -279,11 +317,17 @@ There is no shared "canonical" stream representation — that
 approach loses fidelity in subtle ways. Pairs in Tier 0:
 
 - `openai_chat → openai_chat` — passthrough; framing transparent.
+- `openai_responses → openai_responses` — passthrough.
 - `anthropic_messages → anthropic_messages` — passthrough.
 - `anthropic_messages → openai_chat` — translate the typed event
   stream into OpenAI's `data: {delta}` chunks.
 - `openai_chat → anthropic_messages` — translate OpenAI deltas
   into Anthropic's typed event stream.
+- `anthropic_messages → openai_responses` — translate typed events
+  into Responses-shape events (`response.output_text.delta`,
+  `response.function_call_arguments.delta`, etc.).
+- `openai_responses → anthropic_messages` — translate Responses
+  events into Anthropic typed events.
 
 ### Backpressure
 
@@ -471,6 +515,45 @@ Field names are stable from Tier 0 onward; observability dashboards
 (Tier 4) will depend on them. No prompt content, no completion
 content, no API keys, no PII — ever.
 
+## Tool / IDE compatibility (Tier 0 acceptance)
+
+Tier 0 isn't done until the following tools work against the
+gateway with only a `BASE_URL` and API-key change. No code change
+on the client side, no bridge processes, no proxies in between.
+
+| Tool | Endpoint used | Setup |
+|---|---|---|
+| **Codex CLI** | `/v1/responses` | `OPENAI_BASE_URL=https://gw.example.com/v1`, `OPENAI_API_KEY=gw_live_...` |
+| **OpenAI Agents SDK** | `/v1/responses` | `base_url=` and `api_key=` on the `OpenAI` client constructor |
+| **Claude Code** | `/v1/messages` | `ANTHROPIC_BASE_URL=https://gw.example.com`, `ANTHROPIC_API_KEY=gw_live_...` |
+| **Anthropic SDK** | `/v1/messages` | `base_url=` on the `Anthropic` client constructor |
+| **OpenAI SDK** (Python/JS) | `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings` | `base_url=` on the `OpenAI` client constructor |
+| **Aider** | `/v1/chat/completions` | `OPENAI_API_BASE=https://gw.example.com/v1`, `OPENAI_API_KEY=gw_live_...` |
+| **Cursor** | `/v1/chat/completions` | Settings → Models → Custom OpenAI-compatible Base URL + API Key |
+| **Cline** (VS Code) | `/v1/chat/completions` or `/v1/messages` | Provider: "OpenAI Compatible" or "Anthropic"; set base URL + API key |
+| **Continue** (VS Code / JetBrains) | `/v1/chat/completions` or `/v1/messages` | `apiBase` + `apiKey` per model in config; provider `openai` or `anthropic` |
+| **Windsurf** | `/v1/chat/completions` | Settings → Models → Custom OpenAI-compatible endpoint |
+| **Zed AI** | `/v1/chat/completions` or `/v1/messages` | Assistant settings → custom provider URL |
+| **OpenWebUI** | `/v1/chat/completions` | Admin → Connections → add OpenAI-compatible endpoint |
+| **LibreChat** | `/v1/chat/completions` | `endpoints.custom` entry pointing at gateway |
+
+The "acceptance test" for Tier 0 is a one-page document with each
+of these tools' setup snippets, validated against a live gateway.
+
+### Tools not in scope for Tier 0
+
+- **GitHub Copilot** — closed protocol; cannot redirect. Future
+  consideration only if Microsoft opens a config surface.
+- **JetBrains AI Assistant** — closed protocol; partial support
+  possible only through community OpenAI-compatible plugins, not
+  via JetBrains' own AI feature.
+- **Gemini-native tools** (Google Vertex SDK direct, Gemini CLI) —
+  defer to Tier 1+ when the Gemini wire-format endpoint lands.
+- **Ollama-native tools** — defer to Tier 1+ when the Ollama
+  endpoint lands.
+- **GitHub Codespaces / Codex Web** — out of scope; we target
+  CLI / IDE tools the user controls.
+
 ## Out of scope (deferred to later tiers)
 
 - Retries with backoff, fallback chains, circuit breakers,
@@ -490,15 +573,19 @@ content, no API keys, no PII — ever.
 
 ## Open questions
 
-1. **`/v1/responses` in Tier 0 or Tier 1?** Stretch Tier 0, firm
-   Tier 1. Codex CLI can be pointed at `/v1/chat/completions` as
-   a fallback, but the Responses API is its real home and shipping
-   it earlier is friendlier.
-2. **Model aliasing in Tier 0?** Recommend Tier 1. Tier 0 uses
+1. **Model aliasing in Tier 0?** Recommend Tier 1. Tier 0 uses
    real provider model IDs only.
-3. **Single-provider key rotation within a wire-protocol endpoint
-   (OpenAI key A → OpenAI key B on 429)** — Tier 1, since it's
-   reliability, not core plumbing.
-4. **Should the model registry support per-org overrides in Tier 0?**
+2. **Single-provider key rotation within a wire-protocol endpoint
+   (OpenAI key A → OpenAI key B on 429)** — recommend Tier 1, since
+   it's reliability work, not core plumbing.
+3. **Should the model registry support per-org overrides in Tier 0?**
    Recommend no. Multi-tenancy lands in Tier 2; Tier 0 is single-
    tenant.
+
+### Decisions locked in this revision
+
+- **`/v1/responses` is Tier 0 required** (not stretch). Codex CLI
+  and the OpenAI Agents SDK are first-class compatibility targets.
+  Server-side state and OpenAI-hosted built-in tools are supported
+  on native passthrough only; cross-provider routes fail-fast with
+  `unsupported_capability`.
