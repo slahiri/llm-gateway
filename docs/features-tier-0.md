@@ -46,6 +46,11 @@ Tier 0 is complete when all of the following are true:
 - Model registry loaded from YAML with capability tags. Cross-
   provider feature mismatches fail-fast with a clear error
   identifying the missing capability.
+- **Static model aliasing** — the registry supports alias entries
+  (`smart`, `cheap`, `fast`) that resolve to a real provider +
+  model. Clients can swap models gateway-wide without code
+  changes. Dynamic / cost- / latency-aware alias resolution is
+  Tier 6.
 - Bearer-token auth against a static gateway-key store (in-memory
   map from YAML config for Tier 0; Postgres-backed virtual keys
   arrive in Tier 2).
@@ -460,6 +465,44 @@ models:
 
 `max_context` and `max_output` are integers (tokens), not tags.
 
+### Static model aliasing
+
+The registry also accepts alias entries. An alias is a single name
+that resolves to exactly one real model in the registry. Aliases
+let clients pick a model by intent (`smart`, `cheap`, `fast`,
+`vision`) and let the operator change the underlying model without
+touching client code.
+
+```yaml
+aliases:
+  - name: smart
+    target: claude-opus-4-7
+  - name: cheap
+    target: gpt-4o-mini
+  - name: fast
+    target: claude-haiku-4-5
+```
+
+Rules:
+- Alias resolution happens **before** provider selection and
+  capability checks. The resolved model's capability tags drive
+  fail-fast behavior; the alias name itself has no capabilities.
+- Aliases cannot chain. A target must be a real model, not another
+  alias. Bootstrap order in the loader: real models first, then
+  aliases; aliases referencing unknown targets fail validation
+  loudly at startup.
+- An alias and a real model name cannot collide. The loader fails
+  startup if they do.
+- An unknown name on a request (neither alias nor real model)
+  returns `model_not_found`.
+- Aliases apply gateway-wide in Tier 0. **Per-org alias overrides
+  arrive with multi-tenancy in Tier 2** and are explicitly out of
+  scope here.
+- Dynamic / cost-aware / latency-aware / capability-tag-filtered
+  alias resolution (where `smart` selects among multiple candidates
+  based on live signals) is Tier 6 and uses the same registry
+  shape with multiple targets.
+
 ### Fail-fast on capability mismatch
 
 When a client requests a feature a routed model doesn't have, the
@@ -564,28 +607,37 @@ of these tools' setup snippets, validated against a live gateway.
   → **Tier 3**.
 - OpenTelemetry traces, Prometheus metrics, admin UI → **Tier 4**.
 - PII redaction, audit log, RBAC, SSO, data residency → **Tier 5**.
-- Model aliasing, cost / latency-aware routing, A/B & shadow,
-  capability-tag-driven routing → **Tier 6**.
+- Cost- / latency-aware alias resolution, A/B & shadow traffic,
+  capability-tag-filtered routing → **Tier 6**. (Static aliasing
+  itself ships in Tier 0.)
+- Per-org alias / model-registry overrides → **Tier 2**, landing
+  with virtual keys and multi-tenancy.
+- Single-provider key rotation (key A → key B on 429) → **Tier 1**,
+  with the rest of the reliability surface (retries, fallbacks,
+  circuit breakers, health checks).
 - OpenAI / Anthropic compat at the documentation level — done
   here as the API itself; tier 7 layers config-as-code, admin
   REST/gRPC, etc.
 - Account management, billing, frontend → **Tiers 10–12**.
 
-## Open questions
+## Decisions locked
 
-1. **Model aliasing in Tier 0?** Recommend Tier 1. Tier 0 uses
-   real provider model IDs only.
-2. **Single-provider key rotation within a wire-protocol endpoint
-   (OpenAI key A → OpenAI key B on 429)** — recommend Tier 1, since
-   it's reliability work, not core plumbing.
-3. **Should the model registry support per-org overrides in Tier 0?**
-   Recommend no. Multi-tenancy lands in Tier 2; Tier 0 is single-
-   tenant.
-
-### Decisions locked in this revision
+All initial open questions are now decided. Captured here so the
+rationale travels with the spec.
 
 - **`/v1/responses` is Tier 0 required** (not stretch). Codex CLI
   and the OpenAI Agents SDK are first-class compatibility targets.
   Server-side state and OpenAI-hosted built-in tools are supported
   on native passthrough only; cross-provider routes fail-fast with
   `unsupported_capability`.
+- **Static model aliasing is Tier 0.** The registry supports alias
+  entries that resolve a name to one real model. Dynamic / cost- /
+  latency-aware alias resolution is Tier 6.
+- **Single-provider key rotation on 429 is Tier 1.** It belongs
+  with the rest of the reliability surface (retries, fallbacks,
+  circuit breakers, health checks), not with core plumbing. Tier 0
+  deploys are single-key per provider and will fail-hard on
+  per-key rate limits until Tier 1.
+- **Per-org alias / registry overrides are Tier 2**, landing with
+  virtual keys and multi-tenancy. Tier 0 is single-tenant; aliases
+  apply gateway-wide.

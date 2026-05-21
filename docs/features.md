@@ -63,6 +63,11 @@ below; that doc is the source of truth for Tier 0.
   Cross-provider feature mismatches fail-fast with
   `unsupported_capability` and the missing tag named. Silent
   downgrades are forbidden.
+- **Static model aliasing** — the registry supports alias entries
+  (`smart`, `cheap`, `fast`) that resolve to a single real model.
+  Clients pick a model by intent; operators swap the underlying
+  target without touching client code. Dynamic / cost- / latency-
+  aware alias resolution moves to Tier 6.
 - **Tier 0 auth** — bearer tokens against an in-memory store loaded
   from YAML (SHA-256 + pepper hashes). Postgres-backed virtual keys
   arrive in Tier 2.
@@ -138,15 +143,20 @@ below; that doc is the source of truth for Tier 0.
 
 ## Tier 6 — Routing intelligence
 
-- **Model aliasing** — `model: "smart"` resolves per-config to a real
-  model. Org-wide swaps without client changes.
-- **Cost-aware routing** — pick the cheapest model meeting a capability
-  tag (vision, json_mode, ctx_length).
+Static model aliasing and the capability-tag vocabulary already
+exist from Tier 0. This tier adds the *dynamic* selection logic on
+top of them.
+
+- **Dynamic alias resolution** — `model: "smart"` becomes a list of
+  candidate targets resolved at request time using cost / latency /
+  health signals, not a single static mapping.
+- **Cost-aware routing** — pick the cheapest model meeting a
+  capability tag (vision, json_mode, ctx_length).
 - **Latency-aware routing** — track p95 per provider, route
   accordingly.
-- **A/B and shadow traffic** — split N% to a candidate model, log both
-  for comparison without affecting the user.
-- **Capability tags** on models so routers can filter:
+- **A/B and shadow traffic** — split N% to a candidate model, log
+  both for comparison without affecting the user.
+- **Capability-tag-filtered routing** — narrow candidates by
   `supports: [vision, tools, json_mode, 200k_ctx]`.
 
 ## Tier 7 — Developer experience
