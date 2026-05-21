@@ -97,6 +97,82 @@ grow.
 - **No license headers in source files.** MIT does not require them
   and they add noise. The repo-root LICENSE is sufficient.
 
+## Branching and PR workflow
+
+`main` is the only long-lived branch and it is always deployable.
+Never commit directly to `main`. Every change lands via a pull
+request from a short-lived feature branch, even when working solo —
+the discipline matters more than the audience.
+
+### Branch naming
+
+Format: `<type>/<short-kebab-description>`. Lowercase, kebab-case, no
+underscores, no personal names. Aim for ≤ 40 characters. Include the
+issue number when one exists: `feat/42-anthropic-driver`.
+
+Allowed types:
+
+- `feat/` — new feature or capability.
+- `fix/` — bug fix.
+- `chore/` — maintenance: dependency bumps, tooling, repo
+  housekeeping.
+- `docs/` — documentation only, no code change.
+- `refactor/` — code reshape with no behavior change.
+- `test/` — test additions or fixes.
+- `ci/` — CI / build / release pipeline changes.
+- `security/` — security-relevant changes (handle carefully; may
+  warrant private discussion before opening a public PR).
+- `release/v<version>` — release-prep branches (`release/v0.2.0`).
+
+Examples:
+
+- `feat/openai-driver`
+- `fix/57-streaming-fallback`
+- `chore/bump-pgx`
+- `ci/govulncheck`
+- `security/redact-bearer-tokens`
+
+### Pull requests
+
+- One logical change per PR (mirrors the per-commit rule). Small PRs
+  merge fast; large PRs rot.
+- PR title is the commit title that will land on `main`. Use
+  imperative mood: "Add Anthropic provider driver", not "Added" or
+  "Adds".
+- PR body explains *why* and what was considered, not what (the diff
+  shows what). Link the issue.
+- CI must be green before merge. No exceptions.
+- **Squash-merge** to `main` so the history is one commit per
+  feature. Keeps `git log --oneline` readable and `git bisect`
+  meaningful.
+- Delete the feature branch after merge (the repo setting
+  `delete-branch-on-merge` is on).
+- Don't rebase a branch that someone else has based work on. For
+  solo work this is moot; once contributors exist, treat shared
+  branches as immutable.
+
+### Main branch protection
+
+The `main` branch is protected on GitHub. The rules:
+
+- **No force-push.** History on `main` is append-only.
+- **No deletion.**
+- **Linear history required.** Merge commits are rejected; PRs
+  squash-merge or rebase-merge.
+- **Pull request required** before merging. Even when working solo,
+  the PR is the gate for CI to run and for a moment of "do I really
+  want to ship this?"
+- **Status checks must pass** before merge — the `CI` workflow's
+  `Go build and test` job is required once it has Go code to test.
+- **Conversation resolution required** — review comments must be
+  resolved before merge.
+- **Admin bypass available** for genuine break-glass situations.
+  Use it deliberately, not as a default.
+
+If a future prompt asks you to push directly to `main`, surface the
+conflict — branch protection should reject the push, but you should
+flag it before trying.
+
 ## Conventions
 
 ### Naming conventions
