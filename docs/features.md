@@ -17,22 +17,64 @@ The differentiation wedge is **compliance-first for regulated industries**
 
 ## Tier 0 — Core proxy plumbing (week 1–2)
 
-- **Provider abstraction** — driver interface for OpenAI, Anthropic,
-  Google (Gemini + Vertex), Bedrock, Azure OpenAI, Cohere, Mistral,
-  Groq, Together, Fireworks. Each driver implements `Chat`, `Embed`,
-  `Generate` (images).
-- **Unified request/response schema** — OpenAI's wire format is
-  canonical (de facto standard). Translate inbound → canonical →
-  provider-native, reverse on response. Anthropic-format endpoint as a
-  secondary surface.
-- **Streaming (SSE)** — non-negotiable. Handle backpressure, partial-
-  chunk parsing, graceful disconnect on both sides.
-- **Tool/function calling normalization** — providers diverge a lot
-  here (Anthropic `tool_use` blocks vs. OpenAI `tool_calls` arrays).
-  Canonicalize.
-- **Error normalization** — map provider error taxonomies to a unified
-  set: `rate_limit`, `context_length`, `content_filter`, `auth`,
-  `server`, `network`.
+**Detailed spec: [`features-tier-0.md`](features-tier-0.md).** Summary
+below; that doc is the source of truth for Tier 0.
+
+- **Wire-protocol endpoints in parallel** — native surfaces, not one
+  canonical shape. Tier 0 ships four required endpoints:
+  `/v1/chat/completions` (OpenAI Chat Completions),
+  `/v1/responses` (OpenAI Responses — for Codex CLI and the OpenAI
+  Agents SDK), `/v1/messages` (Anthropic Messages), and
+  `/v1/embeddings` (OpenAI Embeddings). Gemini, Ollama, and image
+  endpoints land in Tier 1+.
+- **Agent-tool and IDE compatibility is a Tier 0 acceptance
+  criterion** — Codex CLI, Claude Code, Aider, Cursor, Continue,
+  Cline, Windsurf, OpenWebUI, LibreChat, and the OpenAI / Anthropic
+  SDKs all work against the gateway with only a `BASE_URL` change.
+  Full setup matrix in [`features-tier-0.md`](features-tier-0.md).
+- **Provider drivers, dual-mode** — one driver per upstream provider;
+  each driver implements every wire-protocol method. Native shape
+  matches → passthrough fast path; shape differs → in-driver
+  translation. MVP set in Tier 0: OpenAI direct, Anthropic direct,
+  AWS Bedrock (Anthropic on AWS). Vertex / Azure OpenAI / Gemini
+  direct / Ollama in Tier 1.
+- **No invented internal canonical format** — requests are routed as
+  their input wire-format type and translated on demand. Translation
+  packages live in `internal/wire/translate/`, one per
+  (from-format, to-format) pair.
+- **Streaming (SSE)** — explicit state machine per (input, output)
+  pair. Backpressure via `io.Pipe`. Client disconnect cancels the
+  upstream context. Default mid-stream failure policy is **fail**;
+  restart-on-fallback is wired through but off by default until
+  Tier 1 lands fallback chains.
+- **Tool / function calling normalization** — OpenAI `tool_calls`
+  arrays ↔ Anthropic `tool_use` content blocks, including parallel
+  tool calls and streamed argument-JSON accumulation. `tool_choice`
+  semantics translated per a documented table.
+- **Error normalization** — single canonical taxonomy:
+  `auth_failed`, `permission_denied`, `model_not_found`,
+  `bad_request`, `unsupported_capability`, `context_length_exceeded`,
+  `content_filtered`, `rate_limited`, `provider_overloaded`,
+  `provider_timeout`, `network_error`, `internal_error`,
+  `client_disconnected`. Each endpoint renders errors in its
+  wire-format-native envelope.
+- **Model registry with capability tags** — YAML-loaded for Tier 0;
+  every model carries `supports[]`, `max_context`, `max_output`.
+  Cross-provider feature mismatches fail-fast with
+  `unsupported_capability` and the missing tag named. Silent
+  downgrades are forbidden.
+- **Static model aliasing** — the registry supports alias entries
+  (`smart`, `cheap`, `fast`) that resolve to a single real model.
+  Clients pick a model by intent; operators swap the underlying
+  target without touching client code. Dynamic / cost- / latency-
+  aware alias resolution moves to Tier 6.
+- **Tier 0 auth** — bearer tokens against an in-memory store loaded
+  from YAML (SHA-256 + pepper hashes). Postgres-backed virtual keys
+  arrive in Tier 2.
+- **Per-request log line** — one structured log per request with
+  stable field names: `request_id`, `org_id`, `endpoint`, `model`,
+  `provider`, `in_tokens`, `out_tokens`, `status`, `error_type`,
+  `duration_ms`, `ttfb_ms`. No prompt or completion content.
 
 ## Tier 1 — Reliability (week 2–4)
 
@@ -101,15 +143,20 @@ The differentiation wedge is **compliance-first for regulated industries**
 
 ## Tier 6 — Routing intelligence
 
-- **Model aliasing** — `model: "smart"` resolves per-config to a real
-  model. Org-wide swaps without client changes.
-- **Cost-aware routing** — pick the cheapest model meeting a capability
-  tag (vision, json_mode, ctx_length).
+Static model aliasing and the capability-tag vocabulary already
+exist from Tier 0. This tier adds the *dynamic* selection logic on
+top of them.
+
+- **Dynamic alias resolution** — `model: "smart"` becomes a list of
+  candidate targets resolved at request time using cost / latency /
+  health signals, not a single static mapping.
+- **Cost-aware routing** — pick the cheapest model meeting a
+  capability tag (vision, json_mode, ctx_length).
 - **Latency-aware routing** — track p95 per provider, route
   accordingly.
-- **A/B and shadow traffic** — split N% to a candidate model, log both
-  for comparison without affecting the user.
-- **Capability tags** on models so routers can filter:
+- **A/B and shadow traffic** — split N% to a candidate model, log
+  both for comparison without affecting the user.
+- **Capability-tag-filtered routing** — narrow candidates by
   `supports: [vision, tools, json_mode, 200k_ctx]`.
 
 ## Tier 7 — Developer experience
