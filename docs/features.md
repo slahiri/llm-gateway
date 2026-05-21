@@ -17,22 +17,53 @@ The differentiation wedge is **compliance-first for regulated industries**
 
 ## Tier 0 — Core proxy plumbing (week 1–2)
 
-- **Provider abstraction** — driver interface for OpenAI, Anthropic,
-  Google (Gemini + Vertex), Bedrock, Azure OpenAI, Cohere, Mistral,
-  Groq, Together, Fireworks. Each driver implements `Chat`, `Embed`,
-  `Generate` (images).
-- **Unified request/response schema** — OpenAI's wire format is
-  canonical (de facto standard). Translate inbound → canonical →
-  provider-native, reverse on response. Anthropic-format endpoint as a
-  secondary surface.
-- **Streaming (SSE)** — non-negotiable. Handle backpressure, partial-
-  chunk parsing, graceful disconnect on both sides.
-- **Tool/function calling normalization** — providers diverge a lot
-  here (Anthropic `tool_use` blocks vs. OpenAI `tool_calls` arrays).
-  Canonicalize.
-- **Error normalization** — map provider error taxonomies to a unified
-  set: `rate_limit`, `context_length`, `content_filter`, `auth`,
-  `server`, `network`.
+**Detailed spec: [`features-tier-0.md`](features-tier-0.md).** Summary
+below; that doc is the source of truth for Tier 0.
+
+- **Wire-protocol endpoints in parallel** — native surfaces, not one
+  canonical shape. Tier 0 ships `/v1/chat/completions` (OpenAI Chat
+  Completions), `/v1/messages` (Anthropic Messages), and
+  `/v1/embeddings` (OpenAI Embeddings). `/v1/responses` (used by
+  Codex CLI) is a Tier 0 stretch, firm Tier 1. Gemini, Ollama, and
+  image endpoints land in Tier 1+.
+- **Provider drivers, dual-mode** — one driver per upstream provider;
+  each driver implements every wire-protocol method. Native shape
+  matches → passthrough fast path; shape differs → in-driver
+  translation. MVP set in Tier 0: OpenAI direct, Anthropic direct,
+  AWS Bedrock (Anthropic on AWS). Vertex / Azure OpenAI / Gemini
+  direct / Ollama in Tier 1.
+- **No invented internal canonical format** — requests are routed as
+  their input wire-format type and translated on demand. Translation
+  packages live in `internal/wire/translate/`, one per
+  (from-format, to-format) pair.
+- **Streaming (SSE)** — explicit state machine per (input, output)
+  pair. Backpressure via `io.Pipe`. Client disconnect cancels the
+  upstream context. Default mid-stream failure policy is **fail**;
+  restart-on-fallback is wired through but off by default until
+  Tier 1 lands fallback chains.
+- **Tool / function calling normalization** — OpenAI `tool_calls`
+  arrays ↔ Anthropic `tool_use` content blocks, including parallel
+  tool calls and streamed argument-JSON accumulation. `tool_choice`
+  semantics translated per a documented table.
+- **Error normalization** — single canonical taxonomy:
+  `auth_failed`, `permission_denied`, `model_not_found`,
+  `bad_request`, `unsupported_capability`, `context_length_exceeded`,
+  `content_filtered`, `rate_limited`, `provider_overloaded`,
+  `provider_timeout`, `network_error`, `internal_error`,
+  `client_disconnected`. Each endpoint renders errors in its
+  wire-format-native envelope.
+- **Model registry with capability tags** — YAML-loaded for Tier 0;
+  every model carries `supports[]`, `max_context`, `max_output`.
+  Cross-provider feature mismatches fail-fast with
+  `unsupported_capability` and the missing tag named. Silent
+  downgrades are forbidden.
+- **Tier 0 auth** — bearer tokens against an in-memory store loaded
+  from YAML (SHA-256 + pepper hashes). Postgres-backed virtual keys
+  arrive in Tier 2.
+- **Per-request log line** — one structured log per request with
+  stable field names: `request_id`, `org_id`, `endpoint`, `model`,
+  `provider`, `in_tokens`, `out_tokens`, `status`, `error_type`,
+  `duration_ms`, `ttfb_ms`. No prompt or completion content.
 
 ## Tier 1 — Reliability (week 2–4)
 
