@@ -49,8 +49,7 @@ explicitly before acting.
   distributed.
 - **HTTP**: `net/http` + `chi`. Skip heavy frameworks.
 - **Observability**: `otel-go`, `prometheus/client_golang`, `slog`.
-- **License**: Business Source License 1.1, converting to Apache
-  2.0 after the Change Date. CLA required on contributions.
+- **License**: MIT. No CLA on contributions.
 
 ## Conventions
 
@@ -142,8 +141,7 @@ docs/                    features.md, design notes
   Source of truth for "what are we building." Read it before
   proposing roadmap-level changes.
 - `README.md` — public-facing project description.
-- `LICENSE` — BSL 1.1 terms.
-- `CLA.md` — Contributor License Agreement.
+- `LICENSE` — MIT.
 
 ## Working with the user
 

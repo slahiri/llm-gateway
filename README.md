@@ -77,13 +77,9 @@ roadmap (Tiers 0–12).
 
 ## License
 
-Source-available under the Business Source License 1.1. Self-hosting
-and internal use are permitted; offering the software as a hosted or
-managed service to third parties is not. Converts to Apache 2.0 four
-years after each release. See [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](LICENSE).
 
 ## Contributing
 
-Contributions welcome via pull request. A Contributor License
-Agreement is required — see [`CLA.md`](CLA.md). Issues and design
-discussion are open.
+Contributions welcome via pull request. Issues and design discussion
+are open.
