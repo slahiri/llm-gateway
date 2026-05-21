@@ -1,0 +1,30 @@
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Go build artifacts
+/gateway
+/bin/
+/dist/
+*.test
+*.out
+coverage.out
+
+# Frontend build artifacts
+web/node_modules/
+web/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+.env.local
+*.pem
+*.key
