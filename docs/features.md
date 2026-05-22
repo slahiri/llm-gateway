@@ -116,16 +116,217 @@ below; that doc is the source of truth for Tier 0.
   providers in parallel; use whichever streams first. Premium feature,
   high cost.
 
-## Tier 4 — Observability (week 5–7)
+## Tier 4 — Observability and quality metrics (week 5–7)
+
+**This tier replaces the original observability sketch with the full
+specification.** The position: serious observability — not as deep as
+Langfuse / Arize / Galileo, but a real telemetry surface with quality
+metrics that ship out of the box and a plugin architecture so any
+backend can subscribe.
+
+### Real-time telemetry
 
 - **OpenTelemetry** traces and metrics out of the box. Span per
-  request, child spans per provider attempt.
-- **Prometheus metrics** — latency histograms (per provider, per
-  model), token counters, cost gauges, cache hit rates, error counts.
-- **Structured logs** with provider request/response capture
-  (redaction toggle).
-- **Web UI** — see Tier 12 for the full frontend spec. Embedded via
-  `embed.FS` into the Go binary so the gateway ships as one artifact.
+  request, child spans per provider attempt, per cache lookup, per
+  guardrail check.
+- **Prometheus** native scrape endpoint. Latency histograms
+  (per provider, per model, per endpoint), time-to-first-byte
+  histograms for streaming, token counters, cost gauges, cache
+  hit / miss / bypass / evicted counters, error counters by
+  canonical code, capability-mismatch rejection counters with the
+  missing tag labeled.
+- **Structured logs** — one log line per request via `slog`, with
+  field names fixed from Tier 0 onward. Provider request and
+  response bodies captured behind a redaction toggle (default off).
+
+### Plugin architecture for observability
+
+Observability is event-driven internally. Every request lifecycle
+moment publishes an event on an in-process bus:
+
+- `request.received`
+- `auth.checked`
+- `routing.decided` (chosen model + provider)
+- `provider.call.started`
+- `provider.call.completed` (or `.failed`)
+- `response.started`
+- `response.chunk` (streaming only)
+- `response.completed` (or `.disconnected`, `.failed`)
+- `tool.invoked`
+- `cache.hit` / `cache.miss`
+- `guardrail.triggered`
+
+Built-in observers subscribe to the bus:
+
+- **`otel`** — emits OpenTelemetry spans and metrics via OTLP. Any
+  OTLP-compatible backend works (Datadog, Honeycomb, Tempo,
+  Jaeger, New Relic, Grafana Cloud, Splunk Observability, …).
+- **`prometheus`** — exposes the scrape endpoint.
+- **`slog`** — writes the structured log line.
+
+**Adding a custom observer**: two patterns supported.
+
+1. **Webhook observer** (runtime plugin, no code change). Configured
+   in YAML; the gateway POSTs JSON events to the URL. Slower than
+   in-process but no forking. Good for Langfuse, Helicone, Arize,
+   or any HTTP-receiving observability system.
+
+   ```yaml
+   observers:
+     - type: webhook
+       name: langfuse
+       url: https://langfuse.example.com/api/public/ingestion
+       events: [response.completed, response.failed]
+       auth: { type: bearer, token_env: LANGFUSE_API_KEY }
+       sampling_rate: 1.0
+       async: true   # fire-and-forget; do not block the request
+       max_queue: 10000
+   ```
+
+2. **Compile-time observer** (Go interface). Customer builds a
+   gateway binary that imports an additional observer package
+   implementing:
+
+   ```go
+   type Observer interface {
+       Name() string
+       Events() []EventType
+       OnEvent(ctx context.Context, event Event) error
+   }
+   ```
+
+   Used for in-process observers that need high-throughput access
+   or cannot tolerate the webhook latency.
+
+**Observer health**: failing observers are reported via the same
+observability stack. The gateway tracks per-observer success /
+failure / latency, exposes them as Prometheus metrics, and applies
+exponential backoff on webhook observers that repeatedly fail.
+Misbehaving observers do not back-pressure the request hot path.
+
+### Hits / misses telemetry
+
+Track what worked and what didn't — surfaced both as Prometheus
+counters and as a `query_metrics` MCP tool for ad-hoc queries.
+
+- **Cache**: hit / miss / bypass / evicted, per cache type (exact,
+  semantic).
+- **Routing**: primary used / fallback used / chain exhausted /
+  capability-mismatch rejected (with the missing capability tag
+  named).
+- **Alias resolution**: cached vs newly computed (meaningful once
+  Tier 6 dynamic aliases land).
+- **Streaming**: completed / client disconnected / mid-stream
+  failed, with byte counts when partial.
+- **Tool calls**: per (model, tool) — success / argument-parse error
+  / upstream error / capability mismatch.
+
+### Quality / hallucination measurement
+
+Sampling-based evaluation, not a full eval platform. The gateway
+samples a configurable percentage of production responses (default
+`0%` — feature off; flip to `1%` to enable) and forwards each
+sample to a customer-configured **judge model** with a **judge
+prompt template**.
+
+**Shipped judge templates** (drop-in, ready out of the box;
+customers can ship more):
+
+- **`factuality`** — given the prompt and response, identify
+  factual claims and rate factuality. Returns
+  `{hallucination: bool, factuality: 0-5, unsupported_claims: [string]}`.
+- **`citation_quality`** — for responses that include citations,
+  check whether cited sources exist and whether the claims match
+  cited content. Returns `{citation_count: int, fabricated: int,
+  match_rate: 0-1}`.
+- **`refusal_detection`** — classify whether the response refused
+  to answer and whether the refusal was warranted. Returns
+  `{is_refusal: bool, appropriate: bool, reason: string}`.
+
+Each template is versioned. The version is recorded with each
+score so historical metrics survive template updates. Customers
+can ship additional templates via config:
+
+```yaml
+quality:
+  sample_rate: 0.01           # 1% of responses
+  judge_model: gpt-4o-mini    # or any model in the registry
+  templates: [factuality, citation_quality, refusal_detection]
+  per_org_spend_cap_usd: 50   # eval budget separate from proxy budget
+```
+
+**Storage**:
+
+- Append-only `quality_event` table in Postgres, same store and
+  multi-tenancy rules as the usage ledger.
+- Columns: `id, ts, org_id, request_id, model, provider,
+  judge_template, judge_template_version, judge_model, scores jsonb,
+  raw_judge_response text, judge_cost_usd numeric, sample_rate_at_time real`.
+- Indexes: `(org_id, ts)`, `(org_id, model, ts)`,
+  partial `(org_id, judge_template, ts) WHERE judge_template = ...`
+  for per-template rollups.
+- Same Postgres source of truth — no separate ClickHouse store for
+  quality events in v1. Asynchronous replication to the Tier 9
+  analytics tier when usage volume justifies it.
+
+**Aggregation**:
+
+- A background worker computes hourly and daily aggregates,
+  materialized into a `quality_aggregate` rollup table.
+- Rollups are the source of truth for reports; raw events stay
+  available for drill-down.
+
+**Costs and safety**:
+
+- Every eval is another LLM call — default sample rate is `0%`.
+- A per-org cap on quality-evaluation spend, separate from the
+  proxy budget. Eval traffic cannot accidentally drain the proxy
+  budget.
+- Cost-per-row recorded in `quality_event.judge_cost_usd`.
+
+### Reports
+
+Exported via MCP tools (the management interface from Tier 12), not
+via a UI:
+
+- `query_metrics` — interactive Prometheus-style queries against
+  the live counters.
+- `query_quality_metrics` — hallucination / factuality / refusal
+  rates by model, provider, time window, template.
+- `export_usage_report` — usage events, filterable, in CSV / JSON
+  / Parquet, streamed back to the caller or written to a
+  configured S3 / GCS bucket.
+- `export_quality_report` — quality aggregates plus raw events,
+  same output formats.
+- `tail_request_log` — live log tail (streaming) with the
+  redaction toggle honored.
+
+### Anomaly alerts
+
+Threshold-based, lightweight — not a full alerting platform.
+
+- Per-org rules in YAML or via the `set_alert_rule` MCP tool:
+  alert when hallucination rate / error rate / p95 latency / cache
+  miss rate / cost-per-request crosses a threshold over a sliding
+  window.
+- Delivery: webhook (POST JSON to configured URL) or email (via
+  SMTP for the hosted SaaS). PagerDuty / Slack are achieved by
+  pointing the webhook at their inbound URLs.
+- Hysteresis: consecutive-window confirmation required before
+  firing to prevent flapping.
+
+### Out of scope (Langfuse / Arize / Galileo territory)
+
+Explicitly NOT building any of these; they balloon scope:
+
+- Ground-truth dataset management or labeling workflows.
+- Annotation / human-review UI (no UI at all by design — Tier 12).
+- A/B variant experimentation framework (shadow traffic is Tier 6,
+  a separate concern).
+- Conversation replay / playground tooling.
+- Prompt-engineering authoring or version control.
+- Full alerting pipelines (PagerDuty integration is a customer
+  webhook target, not a feature we own).
 
 ## Tier 5 — Governance & compliance (the wedge)
 
