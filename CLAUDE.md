@@ -10,9 +10,10 @@ A Go-based LLM gateway platform targeting enterprises with
 compliance, audit, and data-sovereignty requirements — under SOC 2,
 ISO 27001, HIPAA, GDPR, or sector-specific frameworks. Proxy with
 multi-tenant accounts, pure usage-based metered billing, WORM-grade
-audit, jurisdiction-aware PII detection, and an admin frontend.
-Hosted SaaS is the primary distribution; the same binary self-hosts
-with the billing module disabled.
+audit, jurisdiction-aware PII detection, and an **MCP-native
+management interface** (no web frontend). Hosted SaaS is the primary
+distribution; the same binary self-hosts with the billing module
+disabled.
 
 ## Architectural commitments (do not regress)
 
@@ -36,9 +37,12 @@ explicitly before acting.
   backend is real. Don't write a `Store` interface preemptively.
 - **Tenant isolation by `org_id` column**, not schema-per-tenant.
   A store-layer helper rejects queries missing a tenant scope.
-- **Frontend**: Vite + React 19 + TypeScript (strict), TanStack
-  Query + Router, Tailwind + shadcn/ui, Recharts. Embedded into the
-  Go binary via `embed.FS` and served from `/admin/`.
+- **Management interface**: MCP (Model Context Protocol). All admin
+  and customer operations are exposed as MCP tools over an
+  authenticated HTTP+SSE transport served at `/v1/mcp`. **No web
+  frontend, no SPA, no Vite, no React.** The only HTML the gateway
+  serves is a minimal Stripe-redirect landing page at
+  `/billing/return`, rendered via `html/template` (stdlib only).
 - **Pricing model**: pure usage-based. Prepaid credit balance for
   self-serve (with auto-top-up), postpaid NET-30 invoicing for
   enterprise. No subscription tiers, no seat fees, no plan-gated
@@ -492,8 +496,11 @@ hostile-input territory and every log line as a potential leak.
 **Output and headers**
 - Set security headers globally on every response:
   `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`,
-  `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a
-  `Content-Security-Policy` for `/admin/`.
+  `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`. A strict
+  `Content-Security-Policy` is applied to the `/billing/return`
+  Stripe-redirect page (default-src 'none' plus the minimum needed
+  for that one template). No CSP needed elsewhere — the gateway
+  serves no other HTML.
 - Strict `Content-Type` on every response. Never let it be sniffed.
 - Generic error messages to clients. Detailed error + request ID
   in the log. Return the request ID in the response so users can
@@ -567,13 +574,23 @@ hostile-input territory and every log line as a potential leak.
   org B's resources via every endpoint. These tests are
   non-negotiable and run in CI.
 
-**Frontend (admin UI)**
-- React mitigates most XSS. `dangerouslySetInnerHTML` is
-  review-fail unless explicitly justified.
-- CSP enforced — no inline scripts; nonces only if absolutely
-  required.
-- Session tokens live in `HttpOnly` cookies, **not** localStorage.
-- CSRF tokens on every state-changing fetch from the UI.
+**MCP management interface**
+- Bearer-token auth on every connection; tokens carry scopes that
+  gate tool visibility and invocation.
+- Every MCP tool invocation produces an audit log entry (Tier 5
+  audit log, same WORM semantics).
+- Tool inputs validated with strict JSON schemas declared by each
+  tool. No `any` / `interface{}` passes through unguarded.
+- Long-running tool responses stream with proper backpressure (same
+  rules as proxy streaming).
+- Rate-limit MCP per token, same as proxy API.
+
+**Stripe-redirect HTML page**
+- Rendered server-side via stdlib `html/template`. No inline JS, no
+  external scripts, no third-party assets.
+- Auto-escape on; never `template.HTML` without an explicit safety
+  comment.
+- Strict CSP (`default-src 'none'` + minimum allowances).
 
 **Anti-abuse**
 - Rate limits per IP, per user, per API key — already in Tier 2;
@@ -593,18 +610,20 @@ hostile-input territory and every log line as a potential leak.
 ```
 cmd/gateway/             main.go
 internal/
-  proxy/                 HTTP handlers, request lifecycle
+  proxy/                 LLM wire-protocol handlers, request lifecycle
   provider/              one driver per upstream LLM provider
+  mcp/                   MCP server + tool implementations
+    tools/               one file per tool group (keys, billing, audit, ...)
   store/                 all DB access; nothing else imports pgx
     migrations/          golang-migrate .sql files
   billing/               BillingProvider interface + Stripe impl
-  auth/                  sessions, OAuth, OIDC/SAML
+  billingweb/            stdlib html/template pages for Stripe redirect flow
+  auth/                  bearer tokens, scopes, MCP auth middleware
   governance/            PII, audit log, residency rules, guardrails
   routing/               fallback, load balancing, cost/latency rules
   cache/                 ristretto + Redis adapter
   config/                koanf-based config loader
   obs/                   OTel + Prometheus wiring
-web/                     Vite + React frontend; build output embedded
 docs/                    features.md, design notes
 ```
 
@@ -617,6 +636,12 @@ docs/                    features.md, design notes
   becomes painful — but only after explicit discussion.
 - Do not introduce subscription tiers, seat pricing, or plan-gated
   features in the billing layer.
+- **Do not introduce a web frontend.** No Vite, no React, no SPA,
+  no Tailwind, no shadcn/ui, no embedded JS bundle. Management is
+  MCP-only. Customer billing UX is via Stripe Customer Portal +
+  the `/billing/return` Stripe-redirect landing page rendered by
+  stdlib `html/template`. If a "small dashboard" feels tempting,
+  add an MCP tool instead.
 - Do not add backwards-compatibility shims for old/removed
   features. If something is removed, remove it cleanly.
 - Do not add closed-source dependencies to the core. Optional paid

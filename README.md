@@ -8,8 +8,9 @@
 
 A Go-based LLM gateway platform built for enterprises with
 compliance, audit, and data-sovereignty requirements. Proxy,
-governance, multi-tenant accounts, metered billing, and an admin
-frontend — in a single binary.
+governance, multi-tenant accounts, metered billing, and an
+**MCP-native management interface** — in a single binary, no web
+frontend.
 
 **Status:** pre-MVP. Design phase. No code yet. The architecture and
 roadmap live in [`docs/features.md`](docs/features.md).
@@ -62,8 +63,9 @@ Once code lands:
 docker compose up
 ```
 
-This brings up the gateway and a bundled Postgres. Open
-`http://localhost:8080/admin/` for the management UI.
+This brings up the gateway and a bundled Postgres. Connect any MCP
+client (Claude Code, mcp-cli, custom integrations) to
+`http://localhost:8080/v1/mcp` to administer it.
 
 For production, point `DATABASE_URL` at a managed Postgres
 (RDS / Cloud SQL / Supabase).
@@ -72,13 +74,15 @@ For production, point `DATABASE_URL` at a managed Postgres
 
 - **Language**: Go.
 - **Database**: Postgres (only). `pgx/v5` + `golang-migrate`.
-- **Frontend**: Vite + React 19 + TypeScript, embedded into the Go
-  binary via `embed.FS` and served from `/admin/`.
+- **Management interface**: MCP (Model Context Protocol) — admin and
+  customer operations exposed as MCP tools over an authenticated
+  HTTP+SSE transport. No web frontend; the only HTML served is a
+  minimal Stripe-redirect landing page.
 - **Cache**: in-memory (`ristretto`) single-node; Redis when
   distributed.
 - **Compatibility**: OpenAI-compatible `/v1/chat/completions`,
-  `/v1/embeddings`, `/v1/images/generations`. Anthropic-compatible
-  `/v1/messages`.
+  `/v1/responses`, `/v1/embeddings`. Anthropic-compatible
+  `/v1/messages`. MCP management at `/v1/mcp`.
 - **Distribution**: single static binary. Hosted SaaS is the primary
   product; the same binary self-hosts for OSS adopters with the
   billing module disabled by config.
