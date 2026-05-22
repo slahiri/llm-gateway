@@ -50,6 +50,10 @@ explicitly before acting.
   distributed.
 - **HTTP**: `net/http` + `chi`. Skip heavy frameworks.
 - **Observability**: `otel-go`, `prometheus/client_golang`, `slog`.
+  Event-driven internally; OTel / Prometheus / slog are built-in
+  observers. Customers can plug in additional observers via
+  webhook (runtime) or by importing a Go observer package
+  (compile-time). No backend is hard-coded.
 - **License**: MIT. No CLA on contributions.
 
 ## Project guardrails
@@ -455,13 +459,17 @@ written around that.
   Never block production with a long `ALTER TABLE`.
 
 **Append-only tables**
-- `audit_log` and `usage_event` are append-only. No `UPDATE`, no
-  `DELETE` in code. The store package exposes only `Insert` and
-  `Query` for these tables; an `UPDATE` review-fails.
+- `audit_log`, `usage_event`, and `quality_event` are append-only.
+  No `UPDATE`, no `DELETE` in code. The store package exposes only
+  `Insert` and `Query` for these tables; an `UPDATE` review-fails.
 - `audit_log` rows include a chained HMAC over the previous row +
   the current row's content. Tampering breaks the chain.
 - Partition by month using Postgres declarative partitioning. The
   cold partition drops are policy operations, not application code.
+- `quality_aggregate` (Tier 4 rollup of `quality_event`) is the
+  one exception — it's a materialized rollup table, rebuilt by a
+  background worker. Treat its `Insert` / `Upsert` paths as
+  privileged.
 
 **Common pitfalls to avoid**
 - Don't store enums as Postgres `ENUM` types — schema changes are
