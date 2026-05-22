@@ -1,13 +1,14 @@
 # LLM Gateway — Feature Roadmap
 
 A Go-based LLM gateway **platform**: proxy + governance + multi-tenant
-account management + metered billing + admin frontend. Distributed as
-a hosted SaaS, with the same binary self-hostable for OSS adopters.
+account management + metered billing + **MCP-native management
+interface** (no web frontend). Distributed as a hosted SaaS, with the
+same binary self-hostable for OSS adopters.
 
 Tiers 0–3 are MVP for the proxy engine; Tiers 4–9 round out the engine
 (observability, compliance, routing intelligence, DX, agentic, polish).
-Tiers 10–12 are the platform layer (accounts, billing, frontend) — not
-optional for the SaaS but gated by config flag so an enterprise self-
+Tiers 10–12 are the platform layer (accounts, billing, MCP management) —
+not optional for the SaaS but gated by config flag so an enterprise self-
 host buyer can run the gateway alone.
 
 The differentiation wedge is **compliance-first for enterprises** —
@@ -124,8 +125,9 @@ below; that doc is the source of truth for Tier 0.
   model), token counters, cost gauges, cache hit rates, error counts.
 - **Structured logs** with provider request/response capture
   (redaction toggle).
-- **Web UI** — see Tier 12 for the full frontend spec. Embedded via
-  `embed.FS` into the Go binary so the gateway ships as one artifact.
+- **MCP management interface** — see Tier 12. Observability queries,
+  audit-log views, key management, billing operations are all
+  exposed as MCP tools. No web UI.
 
 ## Tier 5 — Governance & compliance (the wedge)
 
@@ -168,7 +170,11 @@ top of them.
   passthrough story.
 - **Config as code** — YAML with schema, hot reload via SIGHUP or
   fsnotify. No required DB for basic mode (file + in-memory).
-- **Admin REST + gRPC API** for keys, budgets, policies.
+- **Admin operations via MCP** (Tier 12) — keys, budgets, policies,
+  audit, billing. A small REST surface is exposed for the operations
+  that CI/CD pipelines and infrastructure-as-code typically expect
+  (key issuance from Terraform, etc.); everything else is
+  MCP-native.
 - **Single static binary** — no runtime deps. Optional Postgres /
   ClickHouse adapters for prod-scale analytics.
 
@@ -282,39 +288,121 @@ available as a sales-touched enterprise option.
   admin toggles. Sales determines who gets what — entitlements are
   not tied to a plan tier, since there are no tiers.
 
-## Tier 12 — Web frontend (Vite + React)
+## Tier 12 — MCP management interface
 
-- **Stack**: Vite, React 19, TypeScript (strict mode), TanStack
-  Query for data, TanStack Router for routing, Tailwind + shadcn/ui
-  for styling, Recharts for usage graphs.
-- **Build target**: embedded into the Go binary via `embed.FS` so
-  the gateway ships as one artifact. Vite's `dist/` output is
-  `go:embed`-ed and served from `/admin/`. OSS users get the full
-  UI with no separate deployment step.
-- **Routes**:
-  - `/admin/dashboard` — usage, cost, latency, error rates at a
-    glance.
-  - `/admin/keys` — virtual key CRUD, scoping, budgets.
-  - `/admin/usage` — drill-down by model, provider, key, time
-    range.
-  - `/admin/billing` — credit balance, top-up flow, auto-top-up
-    rules, payment method, transaction history, invoices /
-    receipts.
-  - `/admin/teams` — org / team / user management, invitations,
-    roles.
-  - `/admin/audit` — compliance audit log viewer (filter by user,
-    IP, action, time).
-  - `/admin/requests` — live request explorer with redaction
-    toggle.
-  - `/admin/settings` — SSO config, residency rules, guardrail
-    policies, model catalog.
-- **Auth for the UI**: session cookie + CSRF token. The same admin
-  REST API is also callable with API keys for programmatic admin.
-- **Real-time updates**: SSE from the Go side for live request
-  stream and live token counters. No WebSockets needed.
-- **Frontend in dev mode**: Vite dev server runs on a separate port
-  during development; the Go binary serves the API and proxies
-  unknown routes to the Vite dev server when `--dev` is set.
+All administrative and customer-facing operations on the gateway
+are exposed as MCP (Model Context Protocol) tools. **No web UI.**
+Operators and customers manage the gateway by connecting an MCP
+client (Claude Code, mcp-cli, custom integrations) to a per-
+deployment MCP endpoint.
+
+The decision is foundational, not cosmetic:
+- **Auditable** — no frontend code to security-review.
+- **Smaller attack surface** — no XSS, no CSRF, no SPA dependency
+  tree, no npm supply-chain exposure.
+- **Programmable from day one** — every operation is a tool any
+  agent or CI/CD pipeline can invoke.
+- **Aligned with the agentic-era positioning** — the gateway routes
+  MCP traffic (Tier 8) *and* is managed via MCP.
+- **Single binary, simpler** — no JS build pipeline, no `embed.FS`
+  dance for SPA assets.
+
+### Transport and endpoint
+
+- HTTP + SSE (standard MCP HTTP transport). Streamable HTTP for
+  tool responses that need to stream (live log tails, large
+  exports).
+- Served at `/v1/mcp` by the same Go process. Reuses the gateway's
+  `net/http` server, auth middleware, OTel instrumentation, and
+  audit hooks.
+
+### Authentication and authorization
+
+- Bearer token in the standard `Authorization: Bearer <token>`
+  header. Same gateway-issued `gw_live_<token>` format as the
+  proxy API.
+- Tokens carry **scopes** that gate which tools are visible to
+  `tools/list` and which are invocable. Unauthorized tools are
+  hidden, not just rejected — clients only see what they can use.
+- Scope vocabulary:
+  - `proxy` — invoke the proxy API (Tier 0 tokens have this).
+  - `org:read` / `org:write` — read or modify resources in the
+    caller's org.
+  - `org:admin` — manage members, settings, sub-workspaces.
+  - `billing:read` / `billing:write` — view balance/usage/invoices;
+    top up, set budgets, set auto-top-up rules.
+  - `admin:read` / `admin:write` — gateway-wide reads/configuration
+    across orgs (operator-only).
+- Every MCP tool call produces an audit log entry (Tier 5 audit
+  log, same WORM and SIEM semantics).
+
+### Tool catalog (lands incrementally across tiers)
+
+**Tier 2 — keys, budgets, usage**:
+- `list_keys`, `issue_key`, `revoke_key`, `rotate_key`
+- `get_budget`, `set_budget`
+- `query_usage` (filterable by model, provider, key, time)
+
+**Tier 4 — observability** (see Tier 4 for the metric set):
+- `tail_request_log` (streaming, with redaction)
+- `query_metrics` (latency, throughput, error rates)
+- `query_quality_metrics` (cache hit rate, fallback rate,
+  hallucination scores when enabled)
+
+**Tier 5 — compliance / audit**:
+- `query_audit_log` (streaming, filterable by actor / action / IP /
+  time)
+- `export_audit_pack` (compliance evidence pack — SOC 2, ISO 27001,
+  HIPAA, sector-specific frameworks)
+
+**Tier 10 — accounts**:
+- `list_orgs`, `create_org`, `disable_org`
+- `list_members`, `invite_member`, `remove_member`
+- `set_residency_rule`
+
+**Tier 11 — billing**:
+- `get_balance`
+- `top_up` — returns a one-time Stripe Checkout URL.
+- `get_invoices`
+- `set_auto_topup_rules`
+- `get_payment_portal_url` — returns a Stripe Customer Portal URL
+  for payment-method management.
+
+### Billing UX gap (the one place we serve HTML)
+
+MCP cannot host a card-entry form. The flow:
+
+1. Customer invokes `top_up` in their MCP client.
+2. Gateway calls Stripe Checkout API, gets a one-time session URL.
+3. Tool returns the URL plus a session-bound `return_token`.
+4. Customer pastes the URL into a browser, completes payment.
+5. Stripe redirects to `/billing/return?token=<return_token>` on
+   the gateway.
+6. The gateway renders a minimal HTML page (stdlib `html/template`,
+   no JS, no external assets) that confirms success or failure and
+   tells the customer to return to their MCP client. The MCP
+   session learns the outcome on the next poll or via SSE.
+
+Stripe Customer Portal handles payment-method management and
+invoice history at Stripe-hosted URLs returned by
+`get_payment_portal_url`. The gateway never hosts payment forms.
+
+### Discovery and documentation
+
+- MCP `tools/list` returns every tool the caller's scopes permit,
+  with full JSON schemas and descriptions.
+- Tool descriptions are the primary documentation surface — no
+  separate UI to maintain.
+- A `docs/mcp.md` (lands when Tier 12 implementation starts) lists
+  the tool taxonomy for offline reference.
+
+### Why not a hybrid (MCP + minimal dashboard)
+
+The minimal-dashboard temptation grows unbounded. Either commit to
+MCP-native administration or ship a real frontend. The wedge
+compliance buyer prefers no JS at all in the surface they audit,
+which decides it. If a "small dashboard" feels needed, the right
+answer is to add an MCP tool, not to add HTML.
 
 ---
 
@@ -406,8 +494,10 @@ premature abstraction:
   vendor their tokenizer JSON).
 - **Payments**: `stripe-go` for the default billing provider
   implementation.
-- **Frontend**: Vite + React 19 + TypeScript; embedded via
-  `embed.FS`.
+- **MCP server**: official Go MCP SDK (or equivalent) served at
+  `/v1/mcp` over HTTP+SSE.
+- **Stripe-redirect HTML**: stdlib `html/template`. No JS bundle,
+  no SPA, no build step.
 
 ---
 
