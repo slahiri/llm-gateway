@@ -6,42 +6,47 @@
 [![Postgres](https://img.shields.io/badge/postgres-15%2B-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Status](https://img.shields.io/badge/status-pre--MVP-orange)](docs/features.md)
 
-A Go-based LLM gateway platform built for regulated industries.
-Proxy, governance, multi-tenant accounts, metered billing, and an
-admin frontend — in a single binary.
+A Go-based LLM gateway platform built for enterprises with
+compliance, audit, and data-sovereignty requirements. Proxy,
+governance, multi-tenant accounts, metered billing, and an admin
+frontend — in a single binary.
 
 **Status:** pre-MVP. Design phase. No code yet. The architecture and
 roadmap live in [`docs/features.md`](docs/features.md).
 
 ## Why
 
-The existing LLM gateways trade off in ways regulated buyers cannot
-accept:
+The existing LLM gateways trade off in ways enterprise buyers
+cannot accept:
 
 - The broad Python aggregator: structural perf and memory issues,
   paywalled governance, no jurisdiction-aware compliance.
 - The Go performance leader: best raw latency, but enterprise audit
-  / RBAC / SSO is paywalled and "designed for SOC 2" with no attested
-  certifications.
+  / RBAC / SSO is paywalled and "designed for SOC 2" with no
+  attested certifications.
 - The governance-focused TypeScript player: closest on compliance,
   but hybrid VPC that phones home every 60 seconds, no WORM audit,
-  no jurisdiction-specific PII detectors, closed-source control plane.
+  no jurisdiction-specific PII detectors, closed-source control
+  plane.
 - The hosted SaaS aggregator: disqualifies anyone with data
   residency or audit requirements.
 
-This project ships compliance-first OSS for banks, wealth managers,
-and fintechs operating under DFSA, MAS, SEBI, RBI, HIPAA, or GDPR.
+This project ships compliance-first OSS for any enterprise that
+needs auditability, data sovereignty, and tenant isolation under
+SOC 2, ISO 27001, HIPAA, GDPR, or sector-specific frameworks.
 
 ## Differentiators
 
 - **Jurisdiction-aware PII detection out of the box** — PAN, Aadhaar,
   UPI VPA, IFSC, GSTIN, Emirates ID, NRIC, IBAN, SWIFT, US SSN, PCI
   PAN. Shipped with regression tests, not config burden on a
-  third-party library.
+  third-party library. Designed for enterprises operating across
+  multiple jurisdictions.
 - **WORM-by-default audit log** with S3 Object Lock adapter, HMAC
   chained signatures, native SIEM / syslog export. Not paywalled.
-- **Evidence packs** mapped to SEBI Cybersecurity Framework, DFSA
-  Module GEN, MAS TRM, MAS FEAT, RBI IT Framework, HIPAA §164.
+- **Evidence packs** mapped to SOC 2, ISO 27001, HIPAA §164, GDPR,
+  and sector-specific frameworks (SEBI Cybersecurity, DFSA Module
+  GEN, MAS TRM / FEAT, RBI IT Framework).
 - **True air-gapped deploy mode** — no telemetry, no license check,
   no config sync.
 - **Data residency as enforcement** — `eu_only`, `in_only`,

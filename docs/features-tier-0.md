@@ -30,7 +30,8 @@ Tier 0 is complete when all of the following are true:
 - Three provider drivers connected and tested end-to-end: **OpenAI
   direct**, **Anthropic direct**, **AWS Bedrock** (Anthropic models
   on AWS). Bedrock is in the MVP set because it is the deployment
-  shape regulated buyers prefer.
+  shape enterprise buyers with data-residency or BAA requirements
+  prefer.
 - Four wire-protocol endpoints live and behaviorally correct:
   `/v1/chat/completions`, `/v1/responses`, `/v1/messages`,
   `/v1/embeddings`. `/v1/responses` is required for Codex CLI and
