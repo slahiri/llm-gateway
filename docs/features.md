@@ -7,11 +7,11 @@ a hosted SaaS, with the same binary self-hostable for OSS adopters.
 Tiers 0–3 are MVP for the proxy engine; Tiers 4–9 round out the engine
 (observability, compliance, routing intelligence, DX, agentic, polish).
 Tiers 10–12 are the platform layer (accounts, billing, frontend) — not
-optional for the SaaS but gated by config flag so a regulated self-host
-buyer can run the gateway alone.
+optional for the SaaS but gated by config flag so an enterprise self-
+host buyer can run the gateway alone.
 
-The differentiation wedge is **compliance-first for regulated industries**
-— see the wedge section below the tiers.
+The differentiation wedge is **compliance-first for enterprises** —
+see the wedge section below the tiers.
 
 ---
 
@@ -318,24 +318,28 @@ available as a sales-touched enterprise option.
 
 ---
 
-## Positioning — the regulated-industries wedge
+## Positioning — the enterprise compliance wedge
 
 Speed and provider breadth are already taken lanes. The differentiator
-is **"the LLM gateway built for regulated industries"** (DFSA / MAS /
-SEBI / banking / wealth):
+is **"the LLM gateway built for enterprises that need compliance,
+audit, and data sovereignty done right"**:
 
 - Field-level redaction with jurisdiction-aware rules out of the box
-  (PCI, PII, account numbers, PAN, Aadhaar).
+  (PII, PCI, account numbers, and identifiers across the
+  jurisdictions enterprises operate in — US, EU, India, GCC,
+  Singapore, etc.).
 - Data residency enforcement as a first-class concept, not a config
   afterthought.
-- Audit trails that map directly to SEBI / DFSA / MAS evidence
-  requirements.
-- Tenant isolation strong enough for B2B SaaS sold into banks.
-- Bundled compliance reports — who accessed what model with what data,
-  exportable for auditors.
+- Audit trails that map directly to enterprise compliance evidence
+  requirements — SOC 2, ISO 27001, HIPAA, GDPR, plus sector-
+  specific frameworks where they apply.
+- Tenant isolation strong enough for B2B SaaS sold to large
+  enterprises.
+- Bundled compliance reports — who accessed what model with what
+  data, exportable for auditors.
 
 The market is full of "fastest" and "most providers." There is no
-compliance-first OSS option today, and that is the gap regulated
+compliance-first OSS option today, and that is the gap enterprise
 buyers cite when rejecting existing gateways. Commercial story:
 OSS core, paid enterprise add-ons (SSO, HSM, advanced audit).
 
@@ -498,7 +502,8 @@ the shape of the market, not the leaderboard.
 - Self-published perf: ~15 ms routing overhead (recently improved
   from ~25 ms).
 - **Disqualified for the wedge buyer**: hosted-only with broad rights
-  over content is a non-starter for regulated workloads.
+  over content is a non-starter for any enterprise with compliance
+  or data-sovereignty obligations.
 
 ### Archetype E — Governance-focused gateway
 - TypeScript on Node.js; MIT gateway only. **Control plane
@@ -564,10 +569,10 @@ taken seriously, no points for shipping them:
 
 What is **actually differentiated** in 2026, ranked by buyer impact:
 
-1. **Regulated-industries compliance done right** (see wedge below) —
-   no OSS option closes this. The closest player ships audit without
-   WORM or SIEM, hybrid VPC that phones home, and PII detectors that
-   are not jurisdiction-aware.
+1. **Enterprise compliance done right** (see wedge below) — no OSS
+   option closes this. The closest player ships audit without WORM
+   or SIEM, hybrid VPC that phones home, and PII detectors that are
+   not jurisdiction-aware.
 2. **True air-gapped / no-phone-home deploy** — the existing VPC
    offerings either claim it without proof or phone home on a 1-min
    heartbeat. Neither is provably air-gapped.
@@ -588,24 +593,26 @@ What is **actually differentiated** in 2026, ranked by buyer impact:
 
 ## Sharpened wedge — what to actually build
 
-The "compliance-first for regulated industries" framing is correct
-but vague. Concrete, defensible gaps in the market today:
+The "compliance-first for enterprises" framing is correct but
+vague. Concrete, defensible gaps in the market today:
 
 1. **Jurisdiction-aware PII detection out of the box** — built-in
-   detectors for PAN, Aadhaar, UPI VPA, IFSC, GSTIN (India),
-   Emirates ID (DFSA/UAE), NRIC (MAS/Singapore), IBAN, SWIFT, US
-   SSN, PCI PAN. Not a config burden on a third-party library —
+   detectors for enterprise data classes across jurisdictions: US
+   SSN, PCI PAN, IBAN, SWIFT, EU national IDs, India PAN / Aadhaar
+   / UPI VPA / IFSC / GSTIN, UAE Emirates ID, Singapore NRIC, and
+   the long tail. Not a config burden on a third-party library —
    actually shipped with regression tests. **No competitor ships
    this**; the closest one points you at third-party paid guardrails.
 2. **WORM-by-default audit log** — S3 Object Lock adapter shipped;
    HMAC chained signatures; contractually-defined retention;
-   SIEM/syslog export shipped, not paywalled. The closest
+   SIEM / syslog export shipped, not paywalled. The closest
    competing audit log explicitly does not claim WORM or SIEM.
-3. **Evidence packs mapped to specific regulator frameworks** —
-   prebuilt report exports for SEBI Cybersecurity Framework, DFSA
-   Module GEN, MAS TRM Guidelines, MAS FEAT, RBI IT Framework,
-   HIPAA §164 controls. Generic SOC 2 mappings are not enough; this
-   is the "we can show our regulator" gap.
+3. **Evidence packs mapped to enterprise compliance frameworks** —
+   prebuilt report exports for SOC 2, ISO 27001, HIPAA §164, GDPR,
+   PCI-DSS, and sector-specific frameworks (SEBI Cybersecurity,
+   DFSA Module GEN, MAS TRM / FEAT, RBI IT Framework). Generic
+   "we have audit logs" is not enough — auditors want
+   control-mapped evidence packs.
 4. **True air-gapped mode** — fully disconnected install: no
    telemetry, no license check, no config sync. Documented and
    tested. Existing "VPC" offerings phone home.
@@ -617,9 +624,9 @@ but vague. Concrete, defensible gaps in the market today:
    audit lines, guardrails that can intercept tool inputs/outputs
    the same way they do completions. Industry-wide gap.
 7. **Closed-source-component-free posture** — entire stack OSS so
-   regulator-facing code is auditable. The closest governance-focused
-   competitor's control plane is closed; this matters for procurement
-   at banks.
+   the audit-facing code is itself auditable. The closest
+   governance-focused competitor's control plane is closed; this
+   matters for enterprise procurement and security reviews.
 
 Commercial story: OSS core. Paid add-ons for HSM-backed key storage,
 managed evidence-pack updates as regulations change, 24/7 support,

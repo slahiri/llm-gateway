@@ -6,12 +6,13 @@ contract — `docs/features.md` is the design / roadmap document.
 
 ## Project in one paragraph
 
-A Go-based LLM gateway platform targeting regulated industries
-(banking, wealth, fintech under DFSA / MAS / SEBI / RBI / HIPAA).
-Proxy with multi-tenant accounts, pure usage-based metered billing,
-WORM-grade audit, jurisdiction-aware PII detection, and an admin
-frontend. Hosted SaaS is the primary distribution; the same binary
-self-hosts with the billing module disabled.
+A Go-based LLM gateway platform targeting enterprises with
+compliance, audit, and data-sovereignty requirements — under SOC 2,
+ISO 27001, HIPAA, GDPR, or sector-specific frameworks. Proxy with
+multi-tenant accounts, pure usage-based metered billing, WORM-grade
+audit, jurisdiction-aware PII detection, and an admin frontend.
+Hosted SaaS is the primary distribution; the same binary self-hosts
+with the billing module disabled.
 
 ## Architectural commitments (do not regress)
 
@@ -54,8 +55,8 @@ explicitly before acting.
 ## Project guardrails
 
 Meta-rules about how code lands in this repo. These exist to keep the
-codebase auditable for the regulated-industry buyer and stable as we
-grow.
+codebase auditable for the enterprise compliance buyer and stable as
+we grow.
 
 - **One logical change per commit.** Small, focused commits. If a
   commit message needs "and" twice, split it.
